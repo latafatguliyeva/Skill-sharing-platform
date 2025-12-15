@@ -122,10 +122,18 @@ public class AuthController {
                 // User exists, update their Google tokens and info
                 user = existingUserOpt.get();
                 System.out.println("Found existing Google user: " + user.getUsername() + " (ID: " + user.getId() + ", has username: " + (user.getUsername() != null && !user.getUsername().trim().isEmpty()) + ")");
+
+                // Update basic Google OAuth info
                 user.setGoogleEmail(email);
                 user.setGoogleAccessToken(request.getAccessToken());
                 user.setGoogleRefreshToken(request.getRefreshToken());
                 user.setGoogleTokenExpiry(request.getTokenExpiry());
+
+                // Check if this is a calendar token (has calendar scopes)
+                // For now, store the same token - we can differentiate later if needed
+                user.setGoogleCalendarToken(request.getAccessToken());
+                user.setGoogleCalendarTokenExpiry(request.getTokenExpiry());
+
                 // Update name if it's different (user might have changed their Google profile)
                 if (!fullName.equals(user.getFullName())) {
                     user.setFullName(fullName);
@@ -143,6 +151,11 @@ public class AuthController {
                     user.setGoogleAccessToken(request.getAccessToken());
                     user.setGoogleRefreshToken(request.getRefreshToken());
                     user.setGoogleTokenExpiry(request.getTokenExpiry());
+
+                    // Set calendar tokens
+                    user.setGoogleCalendarToken(request.getAccessToken());
+                    user.setGoogleCalendarTokenExpiry(request.getTokenExpiry());
+
                     // Update name if it's different
                     if (!fullName.equals(user.getFullName())) {
                         user.setFullName(fullName);
@@ -161,6 +174,10 @@ public class AuthController {
                     user.setGoogleAccessToken(request.getAccessToken());
                     user.setGoogleRefreshToken(request.getRefreshToken());
                     user.setGoogleTokenExpiry(request.getTokenExpiry());
+
+                    // Set calendar tokens same as auth tokens for now
+                    user.setGoogleCalendarToken(request.getAccessToken());
+                    user.setGoogleCalendarTokenExpiry(request.getTokenExpiry());
 
                     // Generate a random password for the user (they'll use Google login)
                     user.setPassword(passwordEncoder.encode(java.util.UUID.randomUUID().toString()));
@@ -197,7 +214,6 @@ public class AuthController {
         return ResponseEntity.ok("Username available");
     }
 
-    // DTO for Google login request
     public static class GoogleLoginRequest {
         private String idToken;
         private String accessToken;

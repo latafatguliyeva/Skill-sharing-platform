@@ -15,6 +15,7 @@ import { Loader2, Users, BookOpen, CheckCircle, AlertTriangle } from 'lucide-rea
 declare global {
   interface Window {
     google: any;
+    requestCalendarAccess?: () => void;
   }
 }
 
@@ -82,9 +83,19 @@ export default function LoginPage() {
     script.onload = () => {
       // Initialize Google Sign-In
       if (window.google) {
+        let calendarTokenClient: any = null;
+
+        // Initialize Google OAuth 2.0 flow for Calendar access
+        calendarTokenClient = window.google.accounts.oauth2.initTokenClient({
+          client_id: '1001273272414-r8edq47mlv5j2b0b75v1db1dkt47rjlj.apps.googleusercontent.com',
+          scope: 'https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/calendar.readonly'
+          // No callback here - we'll set it dynamically in the sign-in handler
+        });
+
+        // Initialize Google Identity Services for authentication
         window.google.accounts.id.initialize({
           client_id: '1001273272414-r8edq47mlv5j2b0b75v1db1dkt47rjlj.apps.googleusercontent.com',
-          callback: handleGoogleSignIn,
+          callback: (response: any) => handleGoogleSignIn(response, calendarTokenClient),
           context: 'signin'
         })
 
@@ -115,19 +126,52 @@ export default function LoginPage() {
     }
   }, [usernameTimeout])
 
-  const handleGoogleSignIn = async (response: any) => {
+  const handleGoogleSignIn = async (response: any, calendarTokenClient?: any) => {
     setGoogleLoading(true)
     setError('')
 
     try {
       console.log('🔐 Google sign-in initiated...')
 
+      let calendarToken = null
+      let calendarExpiry = null
+
+      // After successful authentication, request Calendar access
+      if (calendarTokenClient) {
+        console.log('📅 Requesting Calendar access...')
+
+        // Request calendar access and wait for it
+        await new Promise<void>((resolve) => {
+          const originalCallback = calendarTokenClient.callback
+          calendarTokenClient.callback = (response: any) => {
+            if (response.access_token) {
+              calendarToken = response.access_token
+              calendarExpiry = Date.now() + 3600000 // 1 hour
+              sessionStorage.setItem('googleCalendarToken', response.access_token)
+              sessionStorage.setItem('googleCalendarExpiry', calendarExpiry.toString())
+              console.log('✅ Got Calendar access token')
+            }
+            // Call original callback if it exists
+            if (originalCallback) originalCallback(response)
+            resolve()
+          }
+          calendarTokenClient.requestAccessToken()
+        })
+      }
+
+      // Extract tokens from Google response
       const googleLoginData = {
         idToken: response.credential,
-        accessToken: '',
-        refreshToken: '',
-        tokenExpiry: Date.now() + (3600 * 1000)
+        accessToken: calendarToken || response.access_token || '',
+        refreshToken: '', // GIS doesn't provide refresh tokens
+        tokenExpiry: calendarExpiry || (response.expires_at ? response.expires_at * 1000 : Date.now() + (3600 * 1000))
       }
+
+      console.log('🔑 Token summary:')
+      console.log('  ID token present:', !!response.credential)
+      console.log('  Calendar token present:', !!calendarToken)
+      console.log('  General access token present:', !!response.access_token)
+      console.log('  Final access token:', !!googleLoginData.accessToken)
 
       console.log('📤 Sending Google credential to backend for verification...')
 
@@ -156,6 +200,11 @@ export default function LoginPage() {
         localStorage.setItem('userId', data.userId)
         localStorage.setItem('username', data.username)
         localStorage.setItem('user', JSON.stringify(data))
+
+        // Clean up session storage
+        sessionStorage.removeItem('googleCalendarToken')
+        sessionStorage.removeItem('googleCalendarExpiry')
+
         router.push('/dashboard')
       } else {
         console.log('🔧 User profile incomplete, showing completion modal...')

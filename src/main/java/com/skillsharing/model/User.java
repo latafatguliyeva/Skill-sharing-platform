@@ -30,4 +30,8 @@ public class User {
     private String googleAccessToken;
     private String googleRefreshToken;
     private Long googleTokenExpiry;
+
+    // Google Calendar specific tokens
+    private String googleCalendarToken;
+    private Long googleCalendarTokenExpiry;
 }
