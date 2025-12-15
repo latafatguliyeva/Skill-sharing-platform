@@ -56,10 +56,32 @@ public class UserService {
         Optional<User> existingUser = userRepository.findById(id);
         if (existingUser.isPresent()) {
             User user = existingUser.get();
-            user.setFullName(updatedUser.getFullName());
-            user.setBio(updatedUser.getBio());
-            user.setLocation(updatedUser.getLocation());
-            user.setAvailability(updatedUser.getAvailability());
+
+            // Update only non-null fields (partial update)
+            if (updatedUser.getUsername() != null && !updatedUser.getUsername().trim().isEmpty()) {
+                // Check if username is already taken by another user
+                Optional<User> existingWithUsername = findByUsername(updatedUser.getUsername());
+                if (existingWithUsername.isPresent() && !existingWithUsername.get().getId().equals(id)) {
+                    throw new RuntimeException("Username already exists");
+                }
+                user.setUsername(updatedUser.getUsername());
+            }
+            if (updatedUser.getFullName() != null && !updatedUser.getFullName().trim().isEmpty()) {
+                user.setFullName(updatedUser.getFullName());
+            }
+            if (updatedUser.getBio() != null) {
+                user.setBio(updatedUser.getBio());
+            }
+            if (updatedUser.getLocation() != null) {
+                user.setLocation(updatedUser.getLocation());
+            }
+            if (updatedUser.getAvailability() != null) {
+                user.setAvailability(updatedUser.getAvailability());
+            }
+            if (updatedUser.getPassword() != null && !updatedUser.getPassword().trim().isEmpty()) {
+                user.setPassword(passwordEncoder.encode(updatedUser.getPassword()));
+            }
+
             return userRepository.save(user);
         }
         return null;

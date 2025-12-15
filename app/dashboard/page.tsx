@@ -282,6 +282,7 @@ export default function DashboardPage() {
 
       if (userResponse.ok) {
         const userData = await userResponse.json()
+        console.log('🎯 Dashboard loaded for user:', userData.username, '(ID:', userData.id + ')')
         console.log('User data loaded:', userData.wantedSkills?.length || 0, 'wanted skills')
         console.log('Wanted skills details:', userData.wantedSkills)
         setUser(userData)
@@ -859,7 +860,10 @@ export default function DashboardPage() {
               <Avatar>
                 <AvatarFallback>{user.fullName.charAt(0)}</AvatarFallback>
               </Avatar>
-              <span className="text-sm font-medium text-gray-700">{user.fullName}</span>
+              <div className="flex flex-col">
+                <span className="text-sm font-medium text-gray-700">{user.fullName}</span>
+                <span className="text-xs text-gray-500">@{user.username}</span>
+              </div>
               <Button variant="outline" size="sm" onClick={handleLogout}>
                 <LogOut className="w-4 h-4 mr-2" />
                 Logout

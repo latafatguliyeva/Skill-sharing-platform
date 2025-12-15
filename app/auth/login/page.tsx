@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
@@ -8,7 +8,9 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Alert, AlertDescription } from '@/components/ui/alert'
-import { Loader2, Users, BookOpen } from 'lucide-react'
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Textarea } from '@/components/ui/textarea'
+import { Loader2, Users, BookOpen, CheckCircle, AlertTriangle } from 'lucide-react'
 
 declare global {
   interface Window {
@@ -24,6 +26,49 @@ export default function LoginPage() {
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const [googleLoading, setGoogleLoading] = useState(false)
+  const [showCompletionModal, setShowCompletionModal] = useState(false)
+  const [googleUserData, setGoogleUserData] = useState<any>(null)
+  const [completionFormData, setCompletionFormData] = useState({
+    username: '',
+    fullName: '',
+    location: '',
+    bio: '',
+    password: '',
+    confirmPassword: ''
+  })
+  const [usernameError, setUsernameError] = useState('')
+  const [usernameChecking, setUsernameChecking] = useState(false)
+  const [passwordError, setPasswordError] = useState('')
+  const [usernameTimeout, setUsernameTimeout] = useState<NodeJS.Timeout | null>(null)
+  const [completionLoading, setCompletionLoading] = useState(false)
+
+  // Validation logic for completion form
+  const isCompletionFormValid = useMemo(() => {
+    const hasRequiredFields = completionFormData.fullName?.trim() &&
+                             completionFormData.username?.trim() &&
+                             completionFormData.password?.trim() &&
+                             completionFormData.confirmPassword?.trim()
+    const isUsernameValid = completionFormData.username?.length >= 3 && !usernameError
+    const isPasswordValid = completionFormData.password?.length >= 6 &&
+                           completionFormData.password === completionFormData.confirmPassword
+    return hasRequiredFields && isUsernameValid && isPasswordValid && !usernameChecking
+  }, [completionFormData, usernameError, usernameChecking])
+
+  const resetCompletionModal = () => {
+    setCompletionFormData({
+      username: '',
+      fullName: '',
+      location: '',
+      bio: '',
+      password: '',
+      confirmPassword: ''
+    })
+    setUsernameError('')
+    setPasswordError('')
+    setGoogleUserData(null)
+    setError('')
+  }
+
   const router = useRouter()
 
   useEffect(() => {
@@ -38,10 +83,21 @@ export default function LoginPage() {
       // Initialize Google Sign-In
       if (window.google) {
         window.google.accounts.id.initialize({
-          client_id: '1001273272414-r8edq47mlv5j2b0b75v1db1dkt47rjlj.apps.googleusercontent.com', // Your Google OAuth client ID
+          client_id: '1001273272414-r8edq47mlv5j2b0b75v1db1dkt47rjlj.apps.googleusercontent.com',
           callback: handleGoogleSignIn,
           context: 'signin'
         })
+
+        // Render the Google Sign-In button
+        window.google.accounts.id.renderButton(
+          document.getElementById('google-signin-button'),
+          {
+            theme: 'outline',
+            size: 'large',
+            text: 'continue_with',
+            shape: 'rectangular'
+          }
+        )
       }
     }
 
@@ -50,17 +106,30 @@ export default function LoginPage() {
     }
   }, [])
 
+  // Cleanup username timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (usernameTimeout) {
+        clearTimeout(usernameTimeout)
+      }
+    }
+  }, [usernameTimeout])
+
   const handleGoogleSignIn = async (response: any) => {
     setGoogleLoading(true)
     setError('')
 
     try {
+      console.log('🔐 Google sign-in initiated...')
+
       const googleLoginData = {
         idToken: response.credential,
-        accessToken: '', // Google One Tap doesn't provide access token directly
-        refreshToken: '', // Will be obtained server-side
-        tokenExpiry: Date.now() + (3600 * 1000) // 1 hour from now
+        accessToken: '',
+        refreshToken: '',
+        tokenExpiry: Date.now() + (3600 * 1000)
       }
+
+      console.log('📤 Sending Google credential to backend for verification...')
 
       const loginResponse = await fetch('http://localhost:8080/api/auth/google-login', {
         method: 'POST',
@@ -72,33 +141,46 @@ export default function LoginPage() {
 
       if (!loginResponse.ok) {
         const errorText = await loginResponse.text()
+        console.error('❌ Google login failed:', errorText)
         throw new Error(errorText || 'Google login failed')
       }
 
       const data = await loginResponse.json()
+      console.log('✅ Google login successful for user:', data.username, '(ID:', data.userId + ')')
 
-      // Store auth data
-      localStorage.setItem('token', data.token)
-      localStorage.setItem('userId', data.userId)
-      localStorage.setItem('username', data.username)
-      localStorage.setItem('user', JSON.stringify(data))
+      const isProfileComplete = data.username && data.username.trim() !== ''
 
-      router.push('/dashboard')
+      if (isProfileComplete) {
+        console.log('🔄 User profile already complete, auto-signing in...')
+        localStorage.setItem('token', data.token)
+        localStorage.setItem('userId', data.userId)
+        localStorage.setItem('username', data.username)
+        localStorage.setItem('user', JSON.stringify(data))
+        router.push('/dashboard')
+      } else {
+        console.log('🔧 User profile incomplete, showing completion modal...')
+        setGoogleUserData(data)
+
+        setCompletionFormData({
+          username: data.username || '',
+          fullName: data.fullName || '',
+          location: data.location || '',
+          bio: data.bio || '',
+          password: '',
+          confirmPassword: ''
+        })
+        setShowCompletionModal(true)
+      }
     } catch (error) {
+      console.error('❌ Google sign-in error:', error)
       setError(error instanceof Error ? error.message : 'Google login failed')
     } finally {
       setGoogleLoading(false)
     }
   }
 
-  const handleGoogleSignInClick = () => {
-    if (window.google) {
-      window.google.accounts.id.prompt()
-    }
-  }
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
+  const handleSubmit = async (e?: React.MouseEvent) => {
+    if (e) e.preventDefault()
     setLoading(true)
     setError('')
 
@@ -118,7 +200,6 @@ export default function LoginPage() {
 
       const data = await response.json()
 
-      // Store auth data
       localStorage.setItem('token', data.token)
       localStorage.setItem('userId', data.userId)
       localStorage.setItem('username', data.username)
@@ -132,11 +213,185 @@ export default function LoginPage() {
     }
   }
 
+  const handleCompletionSubmit = async (e?: React.MouseEvent) => {
+    if (e) e.preventDefault()
+    setCompletionLoading(true)
+
+    try {
+      if (!googleUserData) {
+        throw new Error('No Google user data available')
+      }
+
+      if (!completionFormData.fullName.trim()) {
+        throw new Error('Full name is required')
+      }
+
+      if (!completionFormData.username.trim()) {
+        throw new Error('Username is required')
+      }
+
+      if (completionFormData.username.length < 3) {
+        throw new Error('Username must be at least 3 characters long')
+      }
+
+      if (usernameError) {
+        throw new Error(usernameError)
+      }
+
+      if (!completionFormData.password.trim()) {
+        throw new Error('Password is required')
+      }
+
+      if (completionFormData.password.length < 6) {
+        throw new Error('Password must be at least 6 characters long')
+      }
+
+      if (completionFormData.password !== completionFormData.confirmPassword) {
+        throw new Error('Passwords do not match')
+      }
+
+      const updateData = {
+        username: completionFormData.username.trim(),
+        fullName: completionFormData.fullName.trim(),
+        location: completionFormData.location.trim() || null,
+        bio: completionFormData.bio.trim() || null,
+        password: completionFormData.password.trim()
+      }
+
+      const response = await fetch(`http://localhost:8080/api/users/${googleUserData.userId}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${googleUserData.token}`
+        },
+        body: JSON.stringify(updateData)
+      })
+
+      if (!response.ok) {
+        const errorText = await response.text()
+        throw new Error(errorText || 'Failed to update profile')
+      }
+
+      const responseData = await response.json()
+
+      const finalToken = responseData.token || googleUserData.token
+
+      localStorage.setItem('token', finalToken)
+      localStorage.setItem('userId', googleUserData.userId.toString())
+      localStorage.setItem('username', completionFormData.username)
+      localStorage.setItem('user', JSON.stringify({
+        ...googleUserData,
+        username: completionFormData.username
+      }))
+
+      console.log('✅ Profile completion successful, redirecting to dashboard...')
+      setShowCompletionModal(false)
+      router.push('/dashboard')
+    } catch (error) {
+      console.error('❌ Profile completion failed:', error)
+      setError(error instanceof Error ? error.message : 'Profile completion failed')
+      setShowCompletionModal(false)
+    } finally {
+      setCompletionLoading(false)
+    }
+  }
+
+  const checkUsernameAvailability = async (username: string) => {
+    if (username.length < 3) {
+      setUsernameError('')
+      return
+    }
+
+    if (googleUserData?.username && googleUserData.username === username) {
+      setUsernameError('')
+      setUsernameChecking(false)
+      return
+    }
+
+    setUsernameChecking(true)
+    setUsernameError('')
+
+    try {
+      const response = await fetch(`http://localhost:8080/api/auth/check-username?username=${encodeURIComponent(username)}`, {
+        method: 'GET'
+      })
+
+      if (response.status === 409) {
+        setUsernameError('This username is already taken. Please choose another one.')
+      } else if (response.ok) {
+        setUsernameError('')
+      } else {
+        setUsernameError('')
+      }
+    } catch (error) {
+      console.error('Error checking username availability:', error)
+      setUsernameError('')
+    } finally {
+      setUsernameChecking(false)
+      setUsernameTimeout(null)
+    }
+  }
+
+  const handleCompletionChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+    const { name, value } = e.target
+
+    setCompletionFormData(prev => ({
+      ...prev,
+      [name]: value
+    }))
+
+    if (name === 'username') {
+      setUsernameError('')
+      setUsernameChecking(false)
+
+      if (usernameTimeout) {
+        clearTimeout(usernameTimeout)
+        setUsernameTimeout(null)
+      }
+
+      if (value.length >= 3) {
+        setUsernameChecking(true)
+
+        const timeout = setTimeout(() => {
+          checkUsernameAvailability(value)
+        }, 500)
+
+        setUsernameTimeout(timeout)
+      }
+    }
+
+    if (name === 'password' || name === 'confirmPassword') {
+      setPasswordError('')
+
+      if (name === 'password' && completionFormData.confirmPassword) {
+        if (value !== completionFormData.confirmPassword) {
+          setPasswordError('Passwords do not match')
+        }
+      } else if (name === 'confirmPassword' && completionFormData.password) {
+        if (value !== completionFormData.password) {
+          setPasswordError('Passwords do not match')
+        }
+      }
+
+      if (completionFormData.password === completionFormData.confirmPassword &&
+          completionFormData.password?.length >= 6) {
+        setPasswordError('')
+      }
+    }
+  }
+
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setFormData(prev => ({
       ...prev,
       [e.target.name]: e.target.value
     }))
+  }
+
+  const handleKeyPress = (e: React.KeyboardEvent, handler: () => void) => {
+    if (e.key === 'Enter') {
+      e.preventDefault()
+      handler()
+    }
   }
 
   return (
@@ -159,7 +414,7 @@ export default function LoginPage() {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <form onSubmit={handleSubmit} className="space-y-4">
+            <div className="space-y-4">
               <div className="space-y-2">
                 <Label htmlFor="username">Username</Label>
                 <Input
@@ -169,7 +424,7 @@ export default function LoginPage() {
                   placeholder="Enter your username"
                   value={formData.username}
                   onChange={handleChange}
-                  required
+                  onKeyPress={(e) => handleKeyPress(e, handleSubmit)}
                   disabled={loading}
                 />
               </div>
@@ -183,7 +438,7 @@ export default function LoginPage() {
                   placeholder="Enter your password"
                   value={formData.password}
                   onChange={handleChange}
-                  required
+                  onKeyPress={(e) => handleKeyPress(e, handleSubmit)}
                   disabled={loading}
                 />
               </div>
@@ -195,7 +450,7 @@ export default function LoginPage() {
               )}
 
               <Button
-                type="submit"
+                onClick={handleSubmit}
                 className="w-full"
                 disabled={loading}
               >
@@ -208,7 +463,7 @@ export default function LoginPage() {
                   'Sign In'
                 )}
               </Button>
-            </form>
+            </div>
 
             {/* Divider */}
             <div className="mt-6">
@@ -224,57 +479,248 @@ export default function LoginPage() {
 
             {/* Google Sign In */}
             <div className="mt-6">
+              <div id="google-signin-button" className="w-full flex justify-center"></div>
+              {googleLoading && (
+                <div className="flex items-center justify-center mt-2">
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Signing in with Google...
+                </div>
+              )}
+            </div>
+
+          </CardContent>
+        </Card>
+
+        {/* Google OAuth Profile Completion Modal - FIXED */}
+        <Dialog open={showCompletionModal} onOpenChange={(open) => {
+          setShowCompletionModal(open)
+          if (!open) resetCompletionModal()
+        }}>
+          <DialogContent className="sm:max-w-2xl max-h-[85vh] overflow-hidden flex flex-col p-0">
+            {/* Fixed Header - No Scroll */}
+            <DialogHeader className="px-6 pt-6 pb-4 border-b bg-white flex-shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="flex-shrink-0 w-12 h-12 bg-gradient-to-br from-green-400 to-green-600 rounded-full flex items-center justify-center shadow-md">
+                  <CheckCircle className="w-6 h-6 text-white" />
+                </div>
+                <div className="text-left">
+                  <DialogTitle className="text-xl font-bold text-gray-900">
+                    Complete Your Profile
+                  </DialogTitle>
+                  <DialogDescription className="text-sm text-gray-600">
+                    Just a few details to get started
+                  </DialogDescription>
+                </div>
+              </div>
+            </DialogHeader>
+
+            {/* Scrollable Content */}
+            <div className="flex-1 overflow-y-auto px-6 py-4">
+              {googleUserData && (
+                <div className="space-y-4">
+                  {/* Google Info Summary - Compact */}
+                  <div className="p-3 bg-green-50 border border-green-200 rounded-lg">
+                    <div className="flex items-start gap-2">
+                      <CheckCircle className="w-4 h-4 text-green-600 mt-0.5 flex-shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-semibold text-green-800">Google Account Connected</p>
+                        <p className="text-xs text-green-700 truncate">{googleUserData.email}</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="space-y-4">
+                    {/* Required Fields */}
+                    <div className="space-y-3">
+                      <div className="space-y-1.5">
+                        <Label htmlFor="completion-fullName" className="text-sm font-medium">
+                          Full Name *
+                        </Label>
+                        <Input
+                          id="completion-fullName"
+                          name="fullName"
+                          type="text"
+                          placeholder="Enter your full name"
+                          value={completionFormData.fullName}
+                          onChange={handleCompletionChange}
+                          disabled={completionLoading}
+                          className="h-9"
+                        />
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <Label htmlFor="completion-username" className="text-sm font-medium">
+                          Username *
+                        </Label>
+                        <div className="relative">
+                          <Input
+                            id="completion-username"
+                            name="username"
+                            type="text"
+                            placeholder="Choose a unique username"
+                            value={completionFormData.username}
+                            onChange={handleCompletionChange}
+                            minLength={3}
+                            disabled={completionLoading}
+                            className={`h-9 pr-9 ${
+                              usernameError
+                                ? 'border-red-300 focus:border-red-500'
+                                : completionFormData.username && completionFormData.username.length >= 3 && !usernameError && !usernameChecking
+                                  ? 'border-green-300 focus:border-green-500'
+                                  : ''
+                            }`}
+                          />
+                          {usernameChecking && (
+                            <Loader2 className="absolute right-2.5 top-2 w-4 h-4 animate-spin text-yellow-500" />
+                          )}
+                          {!usernameChecking && completionFormData.username && completionFormData.username.length >= 3 && !usernameError && (
+                            <CheckCircle className="absolute right-2.5 top-2 w-4 h-4 text-green-500" />
+                          )}
+                        </div>
+                        {usernameError && (
+                          <p className="text-xs text-red-600 flex items-center gap-1">
+                            <AlertTriangle className="w-3 h-3" />
+                            {usernameError}
+                          </p>
+                        )}
+                        {!usernameError && !usernameChecking && completionFormData.username && completionFormData.username.length >= 3 && (
+                          <p className="text-xs text-green-600">✓ Available</p>
+                        )}
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="space-y-1.5">
+                          <Label htmlFor="completion-password" className="text-sm font-medium">
+                            Password *
+                          </Label>
+                          <Input
+                            id="completion-password"
+                            name="password"
+                            type="password"
+                            placeholder="Min. 6 characters"
+                            value={completionFormData.password}
+                            onChange={handleCompletionChange}
+                            minLength={6}
+                            disabled={completionLoading}
+                            className="h-9"
+                          />
+                        </div>
+
+                        <div className="space-y-1.5">
+                          <Label htmlFor="completion-confirmPassword" className="text-sm font-medium">
+                            Confirm *
+                          </Label>
+                          <Input
+                            id="completion-confirmPassword"
+                            name="confirmPassword"
+                            type="password"
+                            placeholder="Repeat password"
+                            value={completionFormData.confirmPassword}
+                            onChange={handleCompletionChange}
+                            minLength={6}
+                            disabled={completionLoading}
+                            className={`h-9 ${
+                              passwordError
+                                ? 'border-red-300'
+                                : completionFormData.confirmPassword && completionFormData.password === completionFormData.confirmPassword && completionFormData.password.length >= 6
+                                  ? 'border-green-300'
+                                  : ''
+                            }`}
+                          />
+                        </div>
+                      </div>
+                      {passwordError && (
+                        <p className="text-xs text-red-600 flex items-center gap-1">
+                          <AlertTriangle className="w-3 h-3" />
+                          {passwordError}
+                        </p>
+                      )}
+                      {completionFormData.confirmPassword && completionFormData.password === completionFormData.confirmPassword && completionFormData.password.length >= 6 && (
+                        <p className="text-xs text-green-600">✓ Passwords match</p>
+                      )}
+                    </div>
+
+                    {/* Optional Fields */}
+                    <div className="pt-2 border-t space-y-3">
+                      <p className="text-xs text-gray-500 font-medium">Optional Information</p>
+                      
+                      <div className="space-y-1.5">
+                        <Label htmlFor="completion-location" className="text-sm">
+                          Location
+                        </Label>
+                        <Input
+                          id="completion-location"
+                          name="location"
+                          type="text"
+                          placeholder="City, Country"
+                          value={completionFormData.location}
+                          onChange={handleCompletionChange}
+                          disabled={completionLoading}
+                          className="h-9"
+                        />
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <Label htmlFor="completion-bio" className="text-sm">
+                          Bio
+                        </Label>
+                        <Textarea
+                          id="completion-bio"
+                          name="bio"
+                          placeholder="Tell us about yourself..."
+                          value={completionFormData.bio}
+                          onChange={handleCompletionChange}
+                          rows={3}
+                          disabled={completionLoading}
+                          className="resize-none text-sm"
+                        />
+                      </div>
+                    </div>
+
+                    {error && (
+                      <Alert variant="destructive">
+                        <AlertTriangle className="h-4 w-4" />
+                        <AlertDescription className="text-sm">{error}</AlertDescription>
+                      </Alert>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Fixed Footer - No Scroll */}
+            <div className="px-6 py-4 border-t bg-gray-50 flex gap-3 flex-shrink-0">
               <Button
-                type="button"
                 variant="outline"
-                className="w-full"
-                onClick={handleGoogleSignInClick}
-                disabled={googleLoading || loading}
+                onClick={() => {
+                  setShowCompletionModal(false)
+                  resetCompletionModal()
+                }}
+                disabled={completionLoading}
+                className="flex-1 h-9"
               >
-                {googleLoading ? (
+                Cancel
+              </Button>
+              <Button
+                onClick={handleCompletionSubmit}
+                disabled={!isCompletionFormValid || completionLoading}
+                className="flex-1 h-9 bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700"
+              >
+                {completionLoading ? (
                   <>
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Signing in with Google...
+                    Saving...
                   </>
                 ) : (
                   <>
-                    <svg className="mr-2 h-4 w-4" viewBox="0 0 24 24">
-                      <path
-                        fill="currentColor"
-                        d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
-                      />
-                      <path
-                        fill="currentColor"
-                        d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
-                      />
-                      <path
-                        fill="currentColor"
-                        d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"
-                      />
-                      <path
-                        fill="currentColor"
-                        d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
-                      />
-                    </svg>
-                    Continue with Google
+                    Complete Profile
+                    <CheckCircle className="ml-2 w-4 h-4" />
                   </>
                 )}
               </Button>
             </div>
-
-            <div className="mt-6 text-center">
-              <p className="text-sm text-gray-600">
-                Don't have an account?{' '}
-                <Link
-                  href="/auth/register"
-                  className="font-medium text-indigo-600 hover:text-indigo-500"
-                >
-                  Sign up
-                </Link>
-              </p>
-            </div>
-          </CardContent>
-        </Card>
+          </DialogContent>
+        </Dialog>
       </div>
     </div>
   )

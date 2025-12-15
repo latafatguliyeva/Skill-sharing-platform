@@ -1,15 +1,10 @@
 package com.skillsharing.controller;
 
-import com.google.api.client.auth.oauth2.Credential;
-import com.google.api.client.googleapis.auth.oauth2.GoogleAuthorizationCodeFlow;
-import com.google.api.client.googleapis.auth.oauth2.GoogleClientSecrets;
 import com.google.api.client.googleapis.auth.oauth2.GoogleIdToken;
 import com.google.api.client.googleapis.auth.oauth2.GoogleIdTokenVerifier;
 import com.google.api.client.googleapis.javanet.GoogleNetHttpTransport;
-import com.google.api.client.http.javanet.NetHttpTransport;
 import com.google.api.client.json.JsonFactory;
 import com.google.api.client.json.gson.GsonFactory;
-import com.google.api.client.util.store.FileDataStoreFactory;
 import com.skillsharing.dto.AuthResponse;
 import com.skillsharing.dto.LoginRequest;
 import com.skillsharing.dto.RegisterRequest;
@@ -23,10 +18,6 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.*;
 
-import java.io.FileInputStream;
-import java.io.IOException;
-import java.io.InputStreamReader;
-import java.security.GeneralSecurityException;
 import java.util.Collections;
 import java.util.Optional;
 
@@ -36,8 +27,6 @@ import java.util.Optional;
 public class AuthController {
 
     private static final JsonFactory JSON_FACTORY = GsonFactory.getDefaultInstance();
-    private static final String TOKENS_DIRECTORY_PATH = "tokens";
-    private static final String CREDENTIALS_FILE_PATH = "src/main/resources/credentials.json";
 
     @Autowired
     private UserService userService;
@@ -96,33 +85,53 @@ public class AuthController {
     @PostMapping("/google-login")
     public ResponseEntity<?> googleLogin(@RequestBody GoogleLoginRequest request) {
         try {
-            // Verify the Google ID token
+            // Verify the Google ID token and extract user information
             GoogleIdTokenVerifier verifier = new GoogleIdTokenVerifier.Builder(
                     GoogleNetHttpTransport.newTrustedTransport(), JSON_FACTORY)
-                    .setAudience(Collections.singletonList(getClientId()))
+                    .setAudience(Collections.singletonList("1001273272414-r8edq47mlv5j2b0b75v1db1dkt47rjlj.apps.googleusercontent.com"))
                     .build();
 
             GoogleIdToken idToken = verifier.verify(request.getIdToken());
             if (idToken == null) {
-                return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Invalid Google token");
+                return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Invalid Google ID token");
             }
 
             GoogleIdToken.Payload payload = idToken.getPayload();
+
+            // Extract real user information from Google
             String googleId = payload.getSubject();
             String email = payload.getEmail();
             String name = (String) payload.get("name");
+            String givenName = (String) payload.get("given_name");
+            String familyName = (String) payload.get("family_name");
+            String picture = (String) payload.get("picture");
+
+            // Use given name and family name if available, otherwise use full name
+            String fullName = name;
+            if (givenName != null && familyName != null) {
+                fullName = givenName + " " + familyName;
+            }
+
+            System.out.println("Google OAuth successful for: " + email + " (" + fullName + ") with Google ID: " + googleId);
 
             // Check if user exists with this Google ID
             Optional<User> existingUserOpt = userService.findByGoogleId(googleId);
             User user;
 
             if (existingUserOpt.isPresent()) {
-                // User exists, update their Google tokens
+                // User exists, update their Google tokens and info
                 user = existingUserOpt.get();
+                System.out.println("Found existing Google user: " + user.getUsername() + " (ID: " + user.getId() + ", has username: " + (user.getUsername() != null && !user.getUsername().trim().isEmpty()) + ")");
+                user.setGoogleEmail(email);
                 user.setGoogleAccessToken(request.getAccessToken());
                 user.setGoogleRefreshToken(request.getRefreshToken());
                 user.setGoogleTokenExpiry(request.getTokenExpiry());
+                // Update name if it's different (user might have changed their Google profile)
+                if (!fullName.equals(user.getFullName())) {
+                    user.setFullName(fullName);
+                }
                 user = userService.updateUser(user);
+                System.out.println("Updated existing user: " + user.getUsername());
             } else {
                 // Check if user exists with this email
                 Optional<User> emailUserOpt = userService.findByEmail(email);
@@ -134,13 +143,19 @@ public class AuthController {
                     user.setGoogleAccessToken(request.getAccessToken());
                     user.setGoogleRefreshToken(request.getRefreshToken());
                     user.setGoogleTokenExpiry(request.getTokenExpiry());
+                    // Update name if it's different
+                    if (!fullName.equals(user.getFullName())) {
+                        user.setFullName(fullName);
+                    }
                     user = userService.updateUser(user);
+                    System.out.println("Linked Google account to existing user: " + user.getUsername());
                 } else {
-                    // Create new user
+                    // Create new user with Google information (no username initially)
                     user = new User();
-                    user.setUsername(email.split("@")[0] + "_" + googleId.substring(0, 8));
+                    // Don't set username initially - user must complete profile
+                    user.setUsername(null); // Explicitly set to null for Google users
                     user.setEmail(email);
-                    user.setFullName(name);
+                    user.setFullName(fullName);
                     user.setGoogleId(googleId);
                     user.setGoogleEmail(email);
                     user.setGoogleAccessToken(request.getAccessToken());
@@ -151,29 +166,35 @@ public class AuthController {
                     user.setPassword(passwordEncoder.encode(java.util.UUID.randomUUID().toString()));
 
                     user = userService.registerUser(user);
+                    System.out.println("Created new Google user (no username yet): " + user.getId());
                 }
             }
 
-            String token = jwtUtil.generateToken(user.getUsername(), user.getId());
+            // For Google OAuth users without username, use a temporary identifier for JWT
+            String jwtUsername = user.getUsername();
+            if (jwtUsername == null || jwtUsername.trim().isEmpty()) {
+                jwtUsername = "google-user-" + user.getId();
+            }
+            String token = jwtUtil.generateToken(jwtUsername, user.getId());
             return ResponseEntity.ok(new AuthResponse(token, user.getUsername(),
                                                       user.getEmail(), user.getId()));
 
         } catch (Exception e) {
+            System.err.println("Google authentication failed: " + e.getMessage());
+            e.printStackTrace();
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body("Google authentication failed: " + e.getMessage());
         }
     }
 
-    private String getClientId() throws IOException {
-        // Load client secrets to get the client ID
-        java.io.File credentialsFile = new java.io.File(CREDENTIALS_FILE_PATH);
-        if (!credentialsFile.exists()) {
-            throw new IOException("Credentials file not found");
+    @GetMapping("/check-username")
+    public ResponseEntity<?> checkUsernameAvailability(@RequestParam String username) {
+        boolean exists = userService.findByUsername(username).isPresent();
+        System.out.println("Username availability check for '" + username + "': " + (exists ? "TAKEN" : "AVAILABLE"));
+        if (exists) {
+            return ResponseEntity.status(409).body("Username already exists");
         }
-
-        InputStreamReader reader = new InputStreamReader(new FileInputStream(credentialsFile));
-        GoogleClientSecrets clientSecrets = GoogleClientSecrets.load(JSON_FACTORY, reader);
-        return clientSecrets.getDetails().getClientId();
+        return ResponseEntity.ok("Username available");
     }
 
     // DTO for Google login request

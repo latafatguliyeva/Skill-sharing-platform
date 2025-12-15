@@ -27,13 +27,13 @@ public class UserRepository {
     
     public Optional<User> findByUsername(String username) {
         return users.values().stream()
-                .filter(user -> user.getUsername().equals(username))
+                .filter(user -> user.getUsername() != null && user.getUsername().equals(username))
                 .findFirst();
     }
     
     public Optional<User> findByEmail(String email) {
         return users.values().stream()
-                .filter(user -> user.getEmail().equals(email))
+                .filter(user -> user.getEmail() != null && user.getEmail().equals(email))
                 .findFirst();
     }
 
