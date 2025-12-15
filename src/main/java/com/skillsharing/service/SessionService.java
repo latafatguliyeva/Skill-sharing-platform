@@ -33,8 +33,20 @@ public class SessionService {
             System.out.println("Teacher found: " + teacherOpt.isPresent() + ", Learner found: " + learnerOpt.isPresent());
 
             if (teacherOpt.isPresent() && learnerOpt.isPresent()) {
-                System.out.println("Calling GoogleMeetService.createGoogleMeetSession");
-                session = googleMeetService.createGoogleMeetSession(session, teacherOpt.get(), learnerOpt.get());
+                User teacher = teacherOpt.get();
+                User learner = learnerOpt.get();
+
+                // Check if both users have Google OAuth tokens
+                boolean teacherHasGoogleAuth = teacher.getGoogleAccessToken() != null && !teacher.getGoogleAccessToken().isEmpty();
+                boolean learnerHasGoogleAuth = learner.getGoogleAccessToken() != null && !learner.getGoogleAccessToken().isEmpty();
+
+                if (teacherHasGoogleAuth && learnerHasGoogleAuth) {
+                    System.out.println("Both users have Google OAuth - creating calendar events");
+                    session = googleMeetService.createCalendarEventsForBothUsers(session, teacher, learner);
+                } else {
+                    System.out.println("Users missing Google OAuth - using fallback meet session");
+                    session = googleMeetService.createEnhancedMeetSession(session, teacher, learner);
+                }
                 System.out.println("GoogleMeetService returned session with URL: " + session.getMeetingUrl());
             } else {
                 System.out.println("Users not found, skipping Google Meet integration");

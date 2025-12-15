@@ -36,6 +36,12 @@ public class UserRepository {
                 .filter(user -> user.getEmail().equals(email))
                 .findFirst();
     }
+
+    public Optional<User> findByGoogleId(String googleId) {
+        return users.values().stream()
+                .filter(user -> user.getGoogleId() != null && user.getGoogleId().equals(googleId))
+                .findFirst();
+    }
     
     public List<User> findAll() {
         return new ArrayList<>(users.values());

@@ -25,6 +25,7 @@ import com.skillsharing.model.User;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
+import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
@@ -96,6 +97,103 @@ public class GoogleMeetService {
             // Fallback to enhanced method
             return createEnhancedMeetSession(session, teacher, learner);
         }
+    }
+
+    /**
+     * Creates Google Calendar events for both teacher and learner
+     * This creates real calendar events in each user's calendar with Google Meet
+     */
+    public Session createCalendarEventsForBothUsers(Session session, User teacher, User learner) {
+        try {
+            logger.info("Creating calendar events for both users - Teacher: " + teacher.getEmail() + ", Learner: " + learner.getEmail());
+
+            // Create event in teacher's calendar
+            Calendar teacherCalendar = createCalendarServiceForUser(teacher);
+            Event teacherEvent = createCalendarEvent(session, teacher, learner);
+            teacherEvent.setSummary("Teaching Session: " + session.getSkillId());
+            teacherEvent.setDescription(String.format(
+                    "Teaching session with %s (Learner)\n\nSkill: %s\nDuration: %d minutes\nLocation: %s",
+                    learner.getFullName(), session.getSkillId(), session.getDuration(),
+                    session.getSessionType().equals("virtual") ? "Google Meet" : session.getLocation()));
+
+            Event createdTeacherEvent = teacherCalendar.events().insert("primary", teacherEvent)
+                    .setConferenceDataVersion(1)
+                    .setSendUpdates("all")
+                    .execute();
+
+            // Create event in learner's calendar
+            Calendar learnerCalendar = createCalendarServiceForUser(learner);
+            Event learnerEvent = createCalendarEvent(session, teacher, learner);
+            learnerEvent.setSummary("Learning Session: " + session.getSkillId());
+            learnerEvent.setDescription(String.format(
+                    "Learning session with %s (Teacher)\n\nSkill: %s\nDuration: %d minutes\nLocation: %s",
+                    teacher.getFullName(), session.getSkillId(), session.getDuration(),
+                    session.getSessionType().equals("virtual") ? "Google Meet" : session.getLocation()));
+
+            Event createdLearnerEvent = learnerCalendar.events().insert("primary", learnerEvent)
+                    .setConferenceDataVersion(1)
+                    .setSendUpdates("all")
+                    .execute();
+
+            logger.info("Calendar events created successfully for both users");
+
+            // Extract meeting details from teacher's event (they should be the same)
+            updateSessionWithMeetDetails(session, createdTeacherEvent);
+
+            logger.info("Successfully created Google Meet session with calendar events: " + session.getMeetingId());
+            return session;
+
+        } catch (Exception e) {
+            logger.severe("Failed to create calendar events for both users: " + e.getMessage());
+            logger.info("Falling back to enhanced meet session creation");
+            // Fallback to enhanced method
+            return createEnhancedMeetSession(session, teacher, learner);
+        }
+    }
+
+    /**
+     * Creates a Calendar service for a specific user using their OAuth tokens
+     */
+    private Calendar createCalendarServiceForUser(User user) throws IOException, GeneralSecurityException {
+        final NetHttpTransport HTTP_TRANSPORT = GoogleNetHttpTransport.newTrustedTransport();
+
+        // Create credential from user's stored tokens
+        Credential credential = new Credential(com.google.api.client.auth.oauth2.BearerToken.authorizationHeaderAccessMethod());
+        credential.setAccessToken(user.getGoogleAccessToken());
+        credential.setRefreshToken(user.getGoogleRefreshToken());
+        credential.setExpirationTimeMilliseconds(user.getGoogleTokenExpiry());
+
+        return new Calendar.Builder(HTTP_TRANSPORT, JSON_FACTORY, credential)
+                .setApplicationName(applicationName)
+                .build();
+    }
+
+    /**
+     * Get client ID from credentials file
+     */
+    private String getClientId() throws IOException {
+        java.io.File credentialsFile = new java.io.File("src/main/resources/credentials.json");
+        if (!credentialsFile.exists()) {
+            throw new IOException("Credentials file not found");
+        }
+
+        InputStream in = new java.io.FileInputStream(credentialsFile);
+        GoogleClientSecrets clientSecrets = GoogleClientSecrets.load(JSON_FACTORY, new InputStreamReader(in));
+        return clientSecrets.getDetails().getClientId();
+    }
+
+    /**
+     * Get client secret from credentials file
+     */
+    private String getClientSecret() throws IOException {
+        java.io.File credentialsFile = new java.io.File("src/main/resources/credentials.json");
+        if (!credentialsFile.exists()) {
+            throw new IOException("Credentials file not found");
+        }
+
+        InputStream in = new java.io.FileInputStream(credentialsFile);
+        GoogleClientSecrets clientSecrets = GoogleClientSecrets.load(JSON_FACTORY, new InputStreamReader(in));
+        return clientSecrets.getDetails().getClientSecret();
     }
 
     /**

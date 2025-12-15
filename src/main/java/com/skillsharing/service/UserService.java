@@ -35,7 +35,11 @@ public class UserService {
     public Optional<User> findByEmail(String email) {
         return userRepository.findByEmail(email);
     }
-    
+
+    public Optional<User> findByGoogleId(String googleId) {
+        return userRepository.findByGoogleId(googleId);
+    }
+
     public Optional<User> findById(Long id) {
         return userRepository.findById(id);
     }
@@ -59,6 +63,10 @@ public class UserService {
             return userRepository.save(user);
         }
         return null;
+    }
+
+    public User updateUser(User user) {
+        return userRepository.save(user);
     }
     
     public User addOfferedSkill(Long userId, Skill skill) {
