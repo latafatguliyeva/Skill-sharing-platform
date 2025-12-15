@@ -124,11 +124,24 @@ public class GoogleMeetService {
         logger.info("Loading Google API credentials from: " + credentialsFilePath);
 
         try {
-            // Load client secrets
-            InputStream in = GoogleMeetService.class.getResourceAsStream(credentialsFilePath);
-            if (in == null) {
-                throw new FileNotFoundException("Resource not found: " + credentialsFilePath);
+            // Load client secrets - try filesystem first for development, then classpath for production
+            InputStream in = null;
+
+            // First try filesystem (for development/testing)
+            java.io.File credentialsFile = new java.io.File("src/main/resources/credentials.json");
+            if (credentialsFile.exists()) {
+                in = new java.io.FileInputStream(credentialsFile);
+                logger.info("Loaded credentials from filesystem: " + credentialsFile.getAbsolutePath());
+            } else {
+                // Fallback to classpath (for production)
+                logger.info("Credentials not found on filesystem, trying classpath...");
+                in = GoogleMeetService.class.getResourceAsStream(credentialsFilePath);
+                if (in == null) {
+                    throw new FileNotFoundException("Resource not found: " + credentialsFilePath +
+                                                   " (filesystem and classpath both failed)");
+                }
             }
+
             GoogleClientSecrets clientSecrets = GoogleClientSecrets.load(JSON_FACTORY, new InputStreamReader(in));
 
             // Build flow and trigger user authorization request
@@ -141,7 +154,7 @@ public class GoogleMeetService {
             logger.info("Initiating OAuth flow for Google Calendar API access");
             logger.info("Note: This will open a browser for authorization. Complete the authorization to continue.");
 
-            LocalServerReceiver receiver = new LocalServerReceiver.Builder().setPort(8888).build();
+            LocalServerReceiver receiver = new LocalServerReceiver.Builder().setPort(8080).build();
             credential = new AuthorizationCodeInstalledApp(flow, receiver).authorize("user");
 
             logger.info("Successfully obtained OAuth credentials");
@@ -317,6 +330,37 @@ public class GoogleMeetService {
 
         } catch (Exception e) {
             logger.severe("Google API connection test failed: " + e.getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Test method to verify credentials can be loaded
+     * This tests if the credentials.json file is valid and can be parsed
+     */
+    public boolean testCredentialsLoading() {
+        try {
+            logger.info("Testing credentials loading...");
+
+            // For testing, load from file system since it's excluded from Maven resources
+            java.io.File credentialsFile = new java.io.File("src/main/resources/credentials.json");
+            logger.info("Loading Google API credentials from: " + credentialsFile.getAbsolutePath());
+
+            if (!credentialsFile.exists()) {
+                logger.severe("Credentials file not found: " + credentialsFile.getAbsolutePath());
+                return false;
+            }
+
+            // Load client secrets from file
+            InputStream in = new java.io.FileInputStream(credentialsFile);
+            GoogleClientSecrets clientSecrets = GoogleClientSecrets.load(JSON_FACTORY, new InputStreamReader(in));
+
+            logger.info("Successfully loaded credentials");
+            logger.info("Client ID: " + clientSecrets.getDetails().getClientId());
+            return true;
+
+        } catch (Exception e) {
+            logger.severe("Credentials loading test failed: " + e.getMessage());
             return false;
         }
     }
