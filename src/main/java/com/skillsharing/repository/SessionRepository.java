@@ -40,4 +40,14 @@ public class SessionRepository {
                 .filter(session -> session.getLearnerId().equals(learnerId))
                 .collect(Collectors.toList());
     }
+
+    public void deleteById(Long id) {
+        sessions.remove(id);
+    }
+
+    public List<Session> findByStatus(String status) {
+        return sessions.values().stream()
+                .filter(session -> status.equals(session.getStatus()))
+                .collect(Collectors.toList());
+    }
 }
