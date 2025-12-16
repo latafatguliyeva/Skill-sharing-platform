@@ -5,8 +5,9 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Alert, AlertDescription } from '@/components/ui/alert'
-import { Video, Copy, ExternalLink, Clock, User, MessageSquare, CheckCircle, XCircle } from 'lucide-react'
+import { Video, Copy, ExternalLink, Clock, User, MessageSquare, CheckCircle, XCircle, AlertTriangle } from 'lucide-react'
 import { format } from 'date-fns'
+import { useRouter } from 'next/navigation'
 
 interface Session {
   id: number
@@ -33,6 +34,8 @@ export function MeetingSession({ session, userRole, onStatusUpdate }: MeetingSes
   const [timeUntilStart, setTimeUntilStart] = useState<string>('')
   const [canJoin, setCanJoin] = useState(false)
   const [copySuccess, setCopySuccess] = useState(false)
+  const [userHasGoogleAuth, setUserHasGoogleAuth] = useState<boolean | null>(null)
+  const router = useRouter()
 
   useEffect(() => {
     const updateTimeUntilStart = () => {
@@ -62,8 +65,42 @@ export function MeetingSession({ session, userRole, onStatusUpdate }: MeetingSes
     updateTimeUntilStart()
     const interval = setInterval(updateTimeUntilStart, 60000) // Update every minute
 
+    // Check user's Google authentication status
+    checkUserGoogleAuth()
+
     return () => clearInterval(interval)
   }, [session.scheduledTime])
+
+  const checkUserGoogleAuth = async () => {
+    try {
+      const token = localStorage.getItem('token')
+      const userId = localStorage.getItem('userId')
+
+      if (!token || !userId) {
+        setUserHasGoogleAuth(false)
+        return
+      }
+
+      const response = await fetch(`http://localhost:8080/api/users/${userId}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      })
+
+      if (response.ok) {
+        const userData = await response.json()
+        const hasGoogleAuth = userData.googleAccessToken && userData.googleAccessToken.trim() !== ''
+        setUserHasGoogleAuth(hasGoogleAuth)
+      } else {
+        setUserHasGoogleAuth(false)
+      }
+    } catch (error) {
+      console.error('Failed to check Google auth status:', error)
+      setUserHasGoogleAuth(false)
+    }
+  }
+
+  const handleGoogleAuthRequired = () => {
+    router.push('/auth/login?requireGoogle=true')
+  }
 
   const handleJoinMeeting = () => {
     if (session.meetingUrl) {
@@ -265,11 +302,30 @@ export function MeetingSession({ session, userRole, onStatusUpdate }: MeetingSes
           </Alert>
         )}
 
-        {session.sessionType === 'virtual' && canJoin && (
+        {session.sessionType === 'virtual' && canJoin && userHasGoogleAuth === true && (
           <Alert>
             <CheckCircle className="h-4 w-4" />
             <AlertDescription>
               Your virtual meeting is ready! Click "Join Meeting" to start your skill-sharing session.
+            </AlertDescription>
+          </Alert>
+        )}
+
+        {session.sessionType === 'virtual' && canJoin && userHasGoogleAuth === false && (
+          <Alert>
+            <AlertTriangle className="h-4 w-4" />
+            <AlertDescription>
+              <div className="space-y-2">
+                <p>To join virtual meetings, you need to connect your Google account for calendar integration.</p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleGoogleAuthRequired}
+                  className="w-full"
+                >
+                  Connect Google Account
+                </Button>
+              </div>
             </AlertDescription>
           </Alert>
         )}

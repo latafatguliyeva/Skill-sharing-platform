@@ -23,4 +23,15 @@ public class User {
     private List<String> availability = new ArrayList<>();
     private Double rating = 0.0;
     private Integer totalReviews = 0;
+
+    // Google OAuth fields
+    private String googleId;
+    private String googleEmail;
+    private String googleAccessToken;
+    private String googleRefreshToken;
+    private Long googleTokenExpiry;
+
+    // Google Calendar specific tokens
+    private String googleCalendarToken;
+    private Long googleCalendarTokenExpiry;
 }

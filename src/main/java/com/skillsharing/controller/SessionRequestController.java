@@ -1,13 +1,16 @@
 package com.skillsharing.controller;
 
 import com.skillsharing.model.SessionRequest;
+import com.skillsharing.model.User;
 import com.skillsharing.service.SessionRequestService;
 import com.skillsharing.service.GoogleMeetService;
+import com.skillsharing.service.UserService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Optional;
 
 @RestController
 @RequestMapping("/api/session-requests")
@@ -19,6 +22,9 @@ public class SessionRequestController {
 
     @Autowired
     private GoogleMeetService googleMeetService;
+
+    @Autowired
+    private UserService userService;
 
     @PostMapping
     public ResponseEntity<SessionRequest> createSessionRequest(@RequestBody SessionRequest sessionRequest) {
@@ -91,6 +97,28 @@ public class SessionRequestController {
             return ResponseEntity.ok("Google API connection successful");
         } else {
             return ResponseEntity.status(500).body("Google API connection failed - check logs for details");
+        }
+    }
+
+    @GetMapping("/test-calendar-access/{userId}")
+    public ResponseEntity<?> testCalendarAccess(@PathVariable Long userId) {
+        try {
+            // Get user from session service or user service
+            Optional<User> userOpt = userService.findById(userId);
+            if (!userOpt.isPresent()) {
+                return ResponseEntity.badRequest().body("User not found");
+            }
+
+            User user = userOpt.get();
+            boolean success = googleMeetService.testUserCalendarAccess(user);
+
+            if (success) {
+                return ResponseEntity.ok("Calendar access successful for user: " + user.getEmail());
+            } else {
+                return ResponseEntity.status(500).body("Calendar access failed for user: " + user.getEmail() + " - check logs for details");
+            }
+        } catch (Exception e) {
+            return ResponseEntity.status(500).body("Error testing calendar access: " + e.getMessage());
         }
     }
 }
