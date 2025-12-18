@@ -87,8 +87,7 @@ interface SessionRequest {
   notes?: string
   status: string
   createdAt?: string
-  createdAt: string
-  updatedAt?: string
+    updatedAt?: string
   responseMessage?: string
 }
 
