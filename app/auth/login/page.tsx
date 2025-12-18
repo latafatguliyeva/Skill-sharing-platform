@@ -244,7 +244,7 @@ export default function LoginPage() {
 
       if (!response.ok) {
         const errorText = await response.text()
-        throw new Error(errorText || 'Login Failed, Issue Happened')
+        throw new Error(errorText || 'Login failed')
       }
 
       const data = await response.json()
