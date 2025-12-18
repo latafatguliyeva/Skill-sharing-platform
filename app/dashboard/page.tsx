@@ -165,10 +165,10 @@ export default function DashboardPage() {
   const handleApproveRequest = async (requestId: number, message?: string) => {
     try {
       const token = localStorage.getItem('token')
-      const url = message
+      const url = message 
         ? `http://localhost:8080/api/session-requests/${requestId}/approve?message=${encodeURIComponent(message)}`
         : `http://localhost:8080/api/session-requests/${requestId}/approve`
-
+      
       const response = await fetch(url, {
         method: 'POST',
         headers: {
@@ -200,10 +200,10 @@ export default function DashboardPage() {
   const handleRejectRequest = async (requestId: number, message?: string) => {
     try {
       const token = localStorage.getItem('token')
-      const url = message
+      const url = message 
         ? `http://localhost:8080/api/session-requests/${requestId}/reject?message=${encodeURIComponent(message)}`
         : `http://localhost:8080/api/session-requests/${requestId}/reject`
-
+      
       const response = await fetch(url, {
         method: 'POST',
         headers: {
@@ -322,7 +322,7 @@ export default function DashboardPage() {
       const enrichedRequests = await Promise.all(
         allRequests.map(async (request: SessionRequest) => {
           const enriched: RequestWithDetails = { ...request }
-
+          
           try {
             // Fetch learner details
             const learnerRes = await fetch(`http://localhost:8080/api/users/${request.learnerId}`, {
@@ -331,7 +331,7 @@ export default function DashboardPage() {
             if (learnerRes.ok) {
               const learner = await learnerRes.json()
               enriched.learnerName = learner.fullName || learner.username
-
+              
               // Try to get skill name from learner's skills
               if (!enriched.skillName) {
                 const learnerSkill = [...(learner.offeredSkills || []), ...(learner.wantedSkills || [])]
@@ -349,7 +349,7 @@ export default function DashboardPage() {
             if (teacherRes.ok) {
               const teacher = await teacherRes.json()
               enriched.teacherName = teacher.fullName || teacher.username
-
+              
               // Try to get skill name from teacher's skills if not found yet
               if (!enriched.skillName) {
                 const teacherSkill = [...(teacher.offeredSkills || []), ...(teacher.wantedSkills || [])]
@@ -434,9 +434,9 @@ export default function DashboardPage() {
         const allUsers = await response.json()
         // Filter out current user and only keep users with offered skills
         const userIdToUse = currentUserId || userId || '0'
-        const usersWithSkills = allUsers.filter((u: User) =>
-          u.id !== parseInt(userIdToUse) &&
-          u.offeredSkills &&
+        const usersWithSkills = allUsers.filter((u: User) => 
+          u.id !== parseInt(userIdToUse) && 
+          u.offeredSkills && 
           u.offeredSkills.length > 0
         )
         setAllBrowseUsers(usersWithSkills)
@@ -728,7 +728,7 @@ export default function DashboardPage() {
 
       // Skill filter (partial match, case-insensitive)
       if (searchFilters.skill) {
-        const skillMatch = user.offeredSkills?.some(skill =>
+        const skillMatch = user.offeredSkills?.some(skill => 
           skill.name.toLowerCase().includes(searchFilters.skill.toLowerCase())
         )
         if (!skillMatch) return false

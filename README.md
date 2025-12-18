@@ -1,9 +1,3 @@
-<<<<<<< HEAD
-# Skill-sharing-platform
-
-
-This commit is to test
-=======
 # SkillShare Platform
 
 A modern skill-sharing platform where people can connect, learn, and teach skills through virtual meetings. Built with Spring Boot backend and Next.js frontend.
@@ -275,4 +269,3 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 ## Support
 
 For questions or issues, please open an issue on GitHub or contact the development team.
->>>>>>> 0db385279d7e0663707a37c0b90c408231fba3d2
